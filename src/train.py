@@ -7,10 +7,10 @@ import matplotlib.pyplot as plt
 import os
 from datetime import datetime
 from tqdm.auto import tqdm
+import copy
 
-# Define our labels
-LABELS = ['left', 'center', 'right']
-# LABELS = ['far_left', 'left', 'center', 'right', 'far_right']
+# Define our labels (5 classes)
+LABELS = ['far_left', 'left', 'center', 'right', 'far_right']  # -2, -1, 0, 1, 2
 NUM_LABELS = len(LABELS)
 
 def setup_device():
@@ -56,9 +56,17 @@ def validate_model(model, val_loader, device):
     
     return correct / total if total > 0 else 0, total_loss / len(val_loader)
 
-def train_model(model, train_loader, val_loader, device, model_path, epochs=3, learning_rate=2e-5):
-    """Train the model with validation"""
-    output_dir = create_output_dir()
+def train_model(model, train_loader, val_loader, device, model_path, output_dir=None, epochs=3, learning_rate=2e-5, 
+                patience=3, min_delta=0.001):
+    """
+    Train the model with validation and early stopping
+    
+    Args:
+        patience: Number of epochs to wait for improvement before stopping
+        min_delta: Minimum change in validation loss to qualify as an improvement
+    """
+    if output_dir is None:
+        output_dir = create_output_dir()
     print(f"Outputs will be saved to: {output_dir}")
     
     # Setup optimizer and scheduler
@@ -72,6 +80,10 @@ def train_model(model, train_loader, val_loader, device, model_path, epochs=3, l
 
     # Training loop
     best_val_accuracy = 0
+    best_val_loss = float('inf')
+    early_stopping_counter = 0
+    best_model_path = os.path.join(output_dir, model_path)
+    
     history = {
         'train_loss': [],
         'train_acc': [],
@@ -128,11 +140,34 @@ def train_model(model, train_loader, val_loader, device, model_path, epochs=3, l
             'val_loss': f'{val_loss:.4f}'
         })
 
-        # Save best model
-        if val_accuracy > best_val_accuracy:
+        # Early stopping and model saving logic
+        if val_loss < best_val_loss - min_delta:  # Improvement in validation loss
+            best_val_loss = val_loss
             best_val_accuracy = val_accuracy
-            torch.save(model.state_dict(), os.path.join(output_dir, model_path))
-            print(f"\nNew best model saved with validation accuracy: {val_accuracy:.4f}")
+            early_stopping_counter = 0
+            
+            # Save best model
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'val_loss': val_loss,
+                'val_accuracy': val_accuracy,
+            }, best_model_path)
+            
+            print(f"\nNew best model saved with validation loss: {val_loss:.4f} and accuracy: {val_accuracy:.4f}")
+        else:
+            early_stopping_counter += 1
+            print(f"\nEarly stopping counter: {early_stopping_counter}/{patience}")
+            
+            if early_stopping_counter >= patience:
+                print(f"\nEarly stopping triggered after {epoch + 1} epochs!")
+                break
+    
+    # Load best model before returning
+    checkpoint = torch.load(best_model_path)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    print(f"\nLoaded best model from epoch {checkpoint['epoch']} with validation accuracy: {checkpoint['val_accuracy']:.4f}")
     
     # Plot training history
     plot_training_history(history, output_dir)
@@ -164,3 +199,35 @@ def plot_training_history(history, output_dir):
     plt.legend()
     plt.savefig(os.path.join(output_dir, 'accuracy.png'))
     plt.close()
+
+def grid_search_lr(model, train_loader, val_loader, device, lrs=[1e-5, 2e-5, 3e-5]):
+    """Perform grid search for learning rate"""
+    results = {}
+    
+    for lr in lrs:
+        print(f"\nTrying learning rate: {lr}")
+        model_copy = copy.deepcopy(model)
+        
+        history = train_model(
+            model_copy,
+            train_loader,
+            val_loader,
+            device,
+            model_path=f'model_lr_{lr}.pt',
+            learning_rate=lr,
+            epochs=3  # Use fewer epochs for quick testing
+        )
+        
+        results[lr] = {
+            'best_val_acc': max(history['val_acc']),
+            'best_val_loss': min(history['val_loss'])
+        }
+    
+    # Print results
+    print("\nGrid Search Results:")
+    for lr, metrics in results.items():
+        print(f"LR: {lr:.0e}")
+        print(f"Best Val Acc: {metrics['best_val_acc']:.4f}")
+        print(f"Best Val Loss: {metrics['best_val_loss']:.4f}")
+        
+    return results

@@ -1,23 +1,31 @@
 import torch
 from train import setup_model, LABELS
 
-def load_model(model_path, model_name="roberta-base", device=None):
+def load_model(model_path, model_name="roberta-base", device="cpu"):
     """Load a trained model and tokenizer"""
-    if device is None:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # Setup model and tokenizer
     model, tokenizer = setup_model(model_name)
     
-    # Load trained weights
-    model.load_state_dict(torch.load(model_path, map_location=device))
+    # Load the saved state dictionary
+    checkpoint = torch.load(model_path, map_location=device)
+    
+    # Extract just the model weights from the checkpoint
+    if "model_state_dict" in checkpoint:
+        # If saved with full training state
+        model.load_state_dict(checkpoint["model_state_dict"])
+    else:
+        # If saved with just the model state
+        model.load_state_dict(checkpoint)
+    
     model = model.to(device)
     model.eval()
-    
     return model, tokenizer
 
-def predict_stance(text, model, tokenizer, device):
+def predict_stance(text, model, tokenizer, device, labels=None):
     """Predict political stance for a given text"""
+    if labels is None:
+        from train import LABELS
+        labels = LABELS
+        
     # Tokenize the input text
     inputs = tokenizer(
         text,
@@ -37,10 +45,10 @@ def predict_stance(text, model, tokenizer, device):
     confidence_scores = predictions[0].cpu().numpy()
     
     return {
-        'stance': LABELS[predicted_class],
+        'stance': labels[predicted_class],
         'confidence': confidence_scores[predicted_class],
         'all_scores': {
             label: score.item()
-            for label, score in zip(LABELS, confidence_scores)
+            for label, score in zip(labels, confidence_scores)
         }
     }
