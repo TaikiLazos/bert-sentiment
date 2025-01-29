@@ -10,7 +10,7 @@ from tqdm.auto import tqdm
 import copy
 
 # Define our labels (5 classes)
-LABELS = ['far_left', 'left', 'center', 'right', 'far_right']  # -2, -1, 0, 1, 2
+LABELS = ['far_right', 'right', 'center', 'left', 'far_left']
 NUM_LABELS = len(LABELS)
 
 def setup_device():
