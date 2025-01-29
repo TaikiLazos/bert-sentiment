@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from evaluate import load_model, predict_stance
 import torch
 from dataset import load_dataset
+import os
 
 # fake data
 blindspot_data = [
@@ -28,13 +29,13 @@ source_bias_data = [
     {"source": "BBC", "bias": "Center"},
 ]
 
-# Add these constants near the top with other constants
-BEST_MODEL = "outputs\sequential_20250129_185113\model_after_2.pt"
+# Use os.path.join for platform-independent paths
+BEST_MODEL = os.path.join("outputs", "sequential_20250129_185113", "model_after_2.pt")
 MODEL_NAME = "roberta-base"
 TEST_DATASETS = {
-    "Test Set 1": "data/processed/test1.json",
-    "Test Set 2": "data/processed/test2.json",
-    "Test Set 3": "data/processed/test3.json"
+    "Test Set 1": os.path.join("data", "processed", "test1.json"),
+    "Test Set 2": os.path.join("data", "processed", "test2.json"),
+    "Test Set 3": os.path.join("data", "processed", "test3.json")
 }
 
 
