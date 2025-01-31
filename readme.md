@@ -11,7 +11,7 @@ This will create `data/processed/train.json`, `data/processed/test1.json`, `data
 ### Initial Training
 
 ```bash
-python src/main.py --mode train --data_path data/processed/train.json --model_name roberta-base --batch_size 8 --epochs 10 --learning_rate 2e-5
+python src/main.py --mode train --data_path data/processed/train.pkl --model_name roberta-base --batch_size 8 --epochs 1 --learning_rate 2e-5
 ```
 
 ## Experimental Results

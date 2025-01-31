@@ -9,8 +9,8 @@ from datetime import datetime
 from tqdm.auto import tqdm
 import copy
 
-# Define our labels (5 classes)
-LABELS = ['far_right', 'right', 'center', 'left', 'far_left']
+# Define our labels (3 classes)
+LABELS = ['left', 'center', 'right'] #[0, 1, 2]
 NUM_LABELS = len(LABELS)
 
 def setup_device():

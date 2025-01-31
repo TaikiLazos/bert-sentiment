@@ -1,2 +1,7 @@
 data/
 outputs/
+gdelt_data_output/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd

@@ -1,6 +1,6 @@
 import torch
 from torch.utils.data import Dataset
-import json
+import pandas as pd
 import nltk
 from nltk.tokenize import word_tokenize
 from nltk.corpus import stopwords
@@ -18,57 +18,28 @@ except LookupError:
     nltk.download('wordnet')
 
 class PoliticalDataset(Dataset):
-    def __init__(self, data, tokenizer, max_length=512):
+    def __init__(self, data_path, tokenizer, max_length=512):
         """
-        Initialize dataset with JSON data
+        Initialize dataset with pickle data
         
         Args:
-            data: List of dictionaries containing 'text', 'title', 'mention_source', and 'label'
+            data_path: Path to pickle file containing DataFrame
             tokenizer: HuggingFace tokenizer
             max_length: Maximum sequence length
         """
-        self.data = data
+        self.df = pd.read_pickle(data_path)
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.lemmatizer = WordNetLemmatizer()
-        self.stop_words = set(stopwords.words('english'))
         
-        # Label mapping from [-2, -1, 0, 1, 2] to [0, 1, 2, 3, 4]
-        self.label_map = {
-            -2: 0,  # far_left -> 0
-            -1: 1,  # left -> 1
-             0: 2,  # center -> 2
-             1: 3,  # right -> 3
-             2: 4   # far_right -> 4
-        }
-        
-    def preprocess_text(self, text):
-        """Preprocess text with lemmatization and stopword removal"""
-        # Convert to lowercase and remove special characters
-        text = re.sub(r'[^\w\s]', ' ', text.lower())
-        
-        # Tokenize
-        words = word_tokenize(text)
-        
-        # Remove stopwords and lemmatize
-        words = [self.lemmatizer.lemmatize(word) for word in words 
-                if word not in self.stop_words]
-        
-        return ' '.join(words)
-
     def __len__(self):
-        return len(self.data)
+        return len(self.df)
 
     def __getitem__(self, idx):
-        item = self.data[idx]
+        row = self.df.iloc[idx]
         
-        # Preprocess text and title
-        processed_text = self.preprocess_text(item['text'])
-        processed_title = self.preprocess_text(item['title'])
-        
-        # Combine features with special tokens
-        combined_text = (f"[TEXT] {processed_text} [TITLE] {processed_title} "
-                        f"[SOURCE] {item['mention_source']}")
+        # Combine all fields with special tokens
+        combined_text = (f"[TOPIC] {row['topic']} [SOURCE] {row['source']} "
+                        f"[TITLE] {row['title']} [CONTENT] {row['content']}")
         
         # Tokenize the combined text
         encoding = self.tokenizer(
@@ -79,8 +50,8 @@ class PoliticalDataset(Dataset):
             return_tensors='pt'
         )
         
-        # Map the label to the correct index
-        label = self.label_map[item['label']]
+        # Convert bias to label (assuming bias is already in correct format)
+        label = row['bias']
         
         return {
             'input_ids': encoding['input_ids'].flatten(),
@@ -88,29 +59,14 @@ class PoliticalDataset(Dataset):
             'labels': torch.tensor(label, dtype=torch.long)
         }
 
-def load_dataset(json_path):
-    """Load and preprocess the JSON dataset"""
+def load_dataset(data_path):
+    """Load dataset from pickle file"""
     try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        print(f"Successfully loaded {len(data)} examples")
-        return data
-    except UnicodeDecodeError as e:
-        print("Error: Unable to read the file due to encoding issues.")
-        print("Attempting to read with different encoding...")
-        try:
-            with open(json_path, 'r', encoding='utf-8-sig') as f:
-                data = json.load(f)
-            print(f"Successfully loaded {len(data)} examples")
-            return data
-        except Exception as e:
-            print(f"Failed to load the file: {e}")
-            raise
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON format: {e}")
-        raise
+        df = pd.read_pickle(data_path)
+        print(f"Successfully loaded {len(df)} examples from {data_path}")
+        return df
     except Exception as e:
-        print(f"Error: Unexpected error while loading data: {e}")
+        print(f"Error loading dataset: {e}")
         raise
 
 def get_sample_data():

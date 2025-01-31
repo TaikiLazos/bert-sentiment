@@ -29,13 +29,14 @@ source_bias_data = [
     {"source": "BBC", "bias": "Center"},
 ]
 
-# Use os.path.join for platform-independent paths
-BEST_MODEL = os.path.join("outputs", "sequential_20250129_185113", "model_after_2.pt")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+BEST_MODEL = os.path.join(BASE_DIR, "outputs", "sequential_20250129_185113", "model_after_2.pt")
 MODEL_NAME = "roberta-base"
 TEST_DATASETS = {
-    "Test Set 1": os.path.join("data", "processed", "test1.json"),
-    "Test Set 2": os.path.join("data", "processed", "test2.json"),
-    "Test Set 3": os.path.join("data", "processed", "test3.json")
+    "Test Set 1": os.path.join(BASE_DIR, "data", "processed", "test1.json"),
+    "Test Set 2": os.path.join(BASE_DIR, "data", "processed", "test2.json"),
+    "Test Set 3": os.path.join(BASE_DIR, "data", "processed", "test3.json")
 }
 
 
@@ -56,6 +57,7 @@ DATASET_LABEL_NAMES = {
     2: "far_left"
 }
 
+
 def load_test_data():
     """Load test data and create a clean version without labels"""
     data = load_dataset(TEST_DATA_PATH)
@@ -66,13 +68,14 @@ def load_test_data():
         if 'mention_source' in item:
             formatted_text += f"[source] {item['mention_source']} [/source] "
         formatted_text += f"[content] {item['text']} [/content]"
-        
+
         display_data.append({
             'text': formatted_text,
             'title': item['title'],
             'true_label': item['label'],
         })
     return display_data
+
 
 def predict_batch(texts, model, tokenizer, device):
     """Batch prediction for efficiency"""
@@ -83,6 +86,7 @@ def predict_batch(texts, model, tokenizer, device):
         batch_preds = [predict_stance(text, model, tokenizer, device) for text in batch_texts]
         predictions.extend(batch_preds)
     return predictions
+
 
 if "search_history" not in st.session_state:
     st.session_state["search_history"] = []
@@ -169,7 +173,7 @@ else:
 
         if search_query:
             st.markdown(f"### Showing results for: **{search_query}**")
-            search_results = [###fake search results
+            search_results = [  ###fake search results
                 {"title": "Election Updates", "bias": "Center", "url": "https://news.com/election", "left": 10,
                  "center": 30, "right": 15},
                 {"title": "New Economic Policy", "bias": "Right", "url": "https://businessnews.com/policy", "left": 5,
@@ -184,16 +188,16 @@ else:
 
     elif selected_page == "🤖 ML Inference":
         st.title("🤖 Political Stance Inference")
-        
+
         # Dataset selection
         selected_dataset = st.selectbox(
             "Select Test Dataset:",
             options=list(TEST_DATASETS.keys()),
             index=2
         )
-        
+
         TEST_DATA_PATH = TEST_DATASETS[selected_dataset]
-        
+
         # Load model button
         if st.button("🔄 Load Model"):
             with st.spinner("Loading model..."):
@@ -203,14 +207,14 @@ else:
                 st.session_state.tokenizer = tokenizer
                 st.session_state.device = device
                 st.success("Model loaded successfully!")
-        
+
         # Load and display data
         data = load_dataset(TEST_DATA_PATH)
-        
+
         # Store predictions in session state if not already there
         if 'predictions' not in st.session_state:
             st.session_state.predictions = {}
-        
+
         # Display data in table
         for idx, item in enumerate(data):
             # Format text with tags
@@ -218,15 +222,15 @@ else:
             if 'mention_source' in item:
                 formatted_text += f"[source] {item['mention_source']} [/source] "
             formatted_text += f"[content] {item['text']} [/content]"
-            
+
             # Create expandable section for each item
             with st.expander(f"📄 {item['title']}", expanded=idx in st.session_state.predictions):
                 col1, col2 = st.columns([3, 1])
-                
+
                 with col1:
                     st.write("**Full Text:**")
                     st.write(item['text'])  # Show full text instead of preview
-                
+
                 with col2:
                     # Predict button for each item
                     if st.button("🤖 Predict", key=f"predict_{idx}"):
@@ -234,20 +238,20 @@ else:
                             st.error("Please load the model first!")
                         else:
                             prediction = predict_stance(
-                                formatted_text, 
-                                st.session_state.model, 
-                                st.session_state.tokenizer, 
+                                formatted_text,
+                                st.session_state.model,
+                                st.session_state.tokenizer,
                                 st.session_state.device,
                                 labels=LABEL_NAMES
                             )
                             st.session_state.predictions[idx] = prediction
-                
+
                 # Show prediction if available
                 if idx in st.session_state.predictions:
                     prediction = st.session_state.predictions[idx]
                     true_label = DATASET_LABEL_NAMES[item['label']]  # Map -2 to 2 range
                     is_correct = prediction['stance'] == true_label
-                    
+
                     st.markdown(
                         f"""
                         <div style="padding: 1rem; border: 1px solid #ddd; border-radius: 0.5rem; margin: 0.5rem 0;">

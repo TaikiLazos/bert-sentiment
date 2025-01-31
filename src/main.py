@@ -1,5 +1,6 @@
 import argparse
 import warnings
+import os
 # Ignore specific warnings
 warnings.filterwarnings('ignore', category=UserWarning)  # Ignore UserWarnings
 warnings.filterwarnings('ignore', category=FutureWarning)  # Ignore FutureWarnings
@@ -39,24 +40,25 @@ def train(args):
     model, tokenizer = setup_model(model_name=args.model_name)
     model = model.to(device)
     
-    # Get data (either from file or sample data)
-    if args.data_path:
-        print(f"Loading data from {args.data_path}")
-        data = load_dataset(args.data_path)
-        print(f"Loaded {len(data)} examples")
-    else:
-        print("Using sample data...")
-        data = get_sample_data()
+    # Load dataset
+    print(f"Loading data from {args.data_path}")
+    df = pd.read_pickle(args.data_path)
     
-    # Split into train and validation
-    split_idx = int(len(data) * 0.8)
-    train_data = data[:split_idx]
-    val_data = data[split_idx:]
-    print(f"Train size: {len(train_data)}, Validation size: {len(val_data)}")
+    # Split into train and validation (80/20)
+    train_size = int(0.8 * len(df))
+    train_df = df[:train_size]
+    val_df = df[train_size:]
+    print(f"Train size: {len(train_df)}, Validation size: {len(val_df)}")
+    
+    # Save splits temporarily for dataset loading
+    train_temp = os.path.join('data/processed', 'temp_train.pkl')
+    val_temp = os.path.join('data/processed', 'temp_val.pkl')
+    train_df.to_pickle(train_temp)
+    val_df.to_pickle(val_temp)
     
     # Create datasets
-    train_dataset = PoliticalDataset(train_data, tokenizer)
-    val_dataset = PoliticalDataset(val_data, tokenizer)
+    train_dataset = PoliticalDataset(train_temp, tokenizer)
+    val_dataset = PoliticalDataset(val_temp, tokenizer)
     
     # Create dataloaders
     train_loader = DataLoader(
@@ -75,7 +77,7 @@ def train(args):
         results = grid_search_lr(
             model, 
             train_loader, 
-            val_loader, 
+            val_loader,
             device,
             lrs=[1e-5, 2e-5, 3e-5]
         )
@@ -84,13 +86,17 @@ def train(args):
         train_model(
             model, 
             train_loader, 
-            val_loader, 
+            val_loader,
             device,
             model_path=args.model_path,
             epochs=args.epochs,
             learning_rate=args.learning_rate
         )
         print(f"Model saved to {args.model_path}")
+    
+    # Clean up temporary files
+    os.remove(train_temp)
+    os.remove(val_temp)
 
 def evaluate(args):
     if not args.model_path:

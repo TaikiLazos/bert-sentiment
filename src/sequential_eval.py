@@ -6,6 +6,7 @@ from dataset import PoliticalDataset, load_dataset
 from evaluate import load_model, predict_stance
 from torch.utils.data import DataLoader
 from tabulate import tabulate
+import pandas as pd
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Sequential Fine-tuning and Evaluation')
@@ -24,8 +25,8 @@ def evaluate_dataset(model, tokenizer, data_path, device):
     loader = DataLoader(dataset, batch_size=8, shuffle=False)
     
     # Track per-label metrics
-    label_correct = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
-    label_total = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0}
+    label_correct = {0: 0, 1: 0, 2: 0}
+    label_total = {0: 0, 1: 0, 2: 0}
     
     model.eval()
     for batch in loader:
@@ -46,11 +47,9 @@ def evaluate_dataset(model, tokenizer, data_path, device):
     # Calculate per-label accuracies
     label_accuracies = {}
     label_names = {
-        0: "Strong Right",
-        1: "Weak Right",
-        2: "Center",
-        3: "Weak Left",
-        4: "Strong Left"
+        0: "Right",
+        1: "Center",
+        2: "Left"
     }
     
     for label in label_total:
@@ -79,74 +78,83 @@ def sequential_training():
     
     # Test datasets
     test_sets = [
-        "data/processed/test1.json",
-        "data/processed/test2.json",
-        "data/processed/test3.json"
+        "data/processed/test1.pkl",
+        "data/processed/test2.pkl",
+        "data/processed/test3.pkl"
     ]
     
-    # Results table - now including per-label accuracies
+    # Results table
     results = []
-    headers = ["Model", "Dataset", "Overall Acc", "Strong Left", "Weak Left", "Center", "Weak Right", "Strong Right"]
+    headers = ["Model", "Dataset", "Overall Acc", "Left", "Center", "Right"]
     
     # Initial evaluation
     print("\nEvaluating initial model...")
     for test_set in test_sets:
-        overall_acc, label_accs = evaluate_dataset(model, tokenizer, test_set, device)
+        dataset = PoliticalDataset(test_set, tokenizer)
+        loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+        overall_acc, label_accs = evaluate_dataset(model, tokenizer, loader, device)
         results.append([
             "Initial",
             os.path.basename(test_set),
             f"{overall_acc:.4f}",
-            f"{label_accs['Strong Left']:.4f}",
-            f"{label_accs['Weak Left']:.4f}",
+            f"{label_accs['Left']:.4f}",
             f"{label_accs['Center']:.4f}",
-            f"{label_accs['Weak Right']:.4f}",
-            f"{label_accs['Strong Right']:.4f}"
+            f"{label_accs['Right']:.4f}"
         ])
     
-    # Sequential fine-tuning and evaluation
-    for i in range(len(test_sets)-1):
-        train_data = test_sets[i]
-        print(f"\nFine-tuning on {os.path.basename(train_data)}...")
-        
-        # Fine-tune
-        data = load_dataset(train_data)
-        split_idx = int(len(data) * 0.8)
-        train_split = data[:split_idx]
-        val_split = data[split_idx:]
-        
-        train_dataset = PoliticalDataset(train_split, tokenizer)
-        val_dataset = PoliticalDataset(val_split, tokenizer)
-        
-        train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
-        
-        train_model(
-            model,
-            train_loader,
-            val_loader,
-            device,
-            model_path=f"model_after_{i+1}.pt",
-            output_dir=output_dir,
-            epochs=3,
-            learning_rate=2e-5
-        )
-        
-        # Evaluate on remaining test sets
-        model_name = f"After {os.path.basename(train_data)}"
-        for j, test_set in enumerate(test_sets):
-            if j <= i:  # Skip already used datasets
-                continue
-            overall_acc, label_accs = evaluate_dataset(model, tokenizer, test_set, device)
-            results.append([
-                model_name,
-                os.path.basename(test_set),
-                f"{overall_acc:.4f}",
-                f"{label_accs['Strong Left']:.4f}",
-                f"{label_accs['Weak Left']:.4f}",
-                f"{label_accs['Center']:.4f}",
-                f"{label_accs['Weak Right']:.4f}",
-                f"{label_accs['Strong Right']:.4f}"
-            ])
+    # Sequential fine-tuning
+    train_data = "data/processed/train.pkl"
+    print(f"\nFine-tuning on {os.path.basename(train_data)}...")
+    
+    # Load and split data
+    df = pd.read_pickle(train_data)
+    train_size = int(0.8 * len(df))
+    train_df = df[:train_size]
+    val_df = df[train_size:]
+    
+    # Save splits temporarily
+    train_temp = os.path.join('data/processed', 'temp_train.pkl')
+    val_temp = os.path.join('data/processed', 'temp_val.pkl')
+    train_df.to_pickle(train_temp)
+    val_df.to_pickle(val_temp)
+    
+    # Create datasets
+    train_dataset = PoliticalDataset(train_temp, tokenizer)
+    val_dataset = PoliticalDataset(val_temp, tokenizer)
+    
+    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False)
+    
+    # Fine-tune
+    train_model(
+        model,
+        train_loader,
+        val_loader,
+        device,
+        model_path="final_model.pt",
+        output_dir=output_dir,
+        epochs=3,
+        learning_rate=2e-5
+    )
+    
+    # Clean up temporary files
+    os.remove(train_temp)
+    os.remove(val_temp)
+    
+    # Final evaluation on test sets
+    print("\nEvaluating final model...")
+    for test_set in test_sets:
+        dataset = PoliticalDataset(test_set, tokenizer)
+        loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+        overall_acc, label_accs = evaluate_dataset(model, tokenizer, loader, device)
+        results.append([
+            "Final",
+            os.path.basename(test_set),
+            f"{overall_acc:.4f}",
+            f"{label_accs['Left']:.4f}",
+            f"{label_accs['Center']:.4f}",
+            f"{label_accs['Right']:.4f}"
+        ])
     
     # Save results table
     table = tabulate(results, headers=headers, tablefmt="grid")
